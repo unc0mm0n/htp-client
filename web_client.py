@@ -3,6 +3,14 @@ The web client uses Selenium with Firefox (future: or Chrome) to communicate wit
 which will send pipe them to the engine.
 """
 from selenium import webdriver
+import logging
+import json
+
+# This is just to prevent selenium from logging too much (Yeah I know, it's ugly over here..)
+selenium_logger = logging.getLogger('selenium.webdriver.remote.remote_connection')
+# Only display possible problems
+selenium_logger.setLevel(logging.WARNING)
+logging = logging.getLogger(__name__)
 
 HECKS_URL = "https://hecks.space"
 USERNAME_FIELD_ID = "at-field-username"
@@ -25,6 +33,7 @@ class HecksWebClient():
         :param username: username to connect as
         :param password: password to use for connection
         """
+
         self._driver = webdriver.Firefox()
         self.connect(username, password)
 
@@ -43,6 +52,10 @@ class HecksWebClient():
         self._driver.find_element_by_id(USERNAME_FIELD_ID).send_keys(username)
         self._driver.find_element_by_id(PASSWORD_FIELD_ID).send_keys(password)
         self._driver.find_element_by_id(SUBMIT_BUTTON_ID).click()
+
+    def execute_script(self, script):
+        """ This just calls self._driver.run_script(script). Used for debugging. """
+        self._driver.execute_script(json.dumps(script.strip().encode()))
 
 
 class ClientError(Exception):

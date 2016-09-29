@@ -6,6 +6,7 @@ Note that this command will run as a shell script with all relevant privilages! 
 """
 import sys
 import subprocess
+import logging
 
 from htp_controller import HTPController
 from web_client import HecksWebClient
@@ -22,14 +23,27 @@ def main(command, username, password):
     :param run_cmd: the command to run as a subprocess
     """
     prc = subprocess.Popen(command, shell=True, stdin=subprocess.PIPE, stdout=subprocess.PIPE)
-    controller = HTPController(prc.stdin, prc.stdout)
+    controller = HTPController(prc.stdout, prc.stdin)
 
     web_client = HecksWebClient(username, password)
+    while True:
+        controller.command_genmove()
+        response = controller.responses.get()
+        if response:
+            logging.info("got from engine: {}".format(response))
+            web_client.execute_script(response)
+        else:
+            logging.info("got empty string from engine")
+            break
 
 
 if __name__ == "__main__":
-    if len(sys.argv != 3):
+    logging.basicConfig(filename='logs/main.log', level=logging.DEBUG, format='%(asctime)s : %(name)s : %(levelname)s : %(message)s')
+    logging = logging.getLogger(__name__)
+
+    args = sys.argv[1:]
+    if len(args) != 3:
         print("Invalid number of arguments.")
         print("Usage: python main.py \"engine command\" username password")
         exit(-1)
-    main(*sys.argv)
+    main(*args)

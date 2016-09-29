@@ -12,3 +12,6 @@ Scripts
 # .exe files which I was told shouldn't be here, though they are necessary for the program to run
 selenium
 
+# This is mostly debug data logged by the program, or used by the program for testing
+engine_data.txt
+logs

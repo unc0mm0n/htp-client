@@ -5,6 +5,9 @@ HTP will send commands to the engine through pipe_out, and read the responses fr
 
 from queue import Queue
 from threading import Thread
+import logging
+
+logging = logging.getLogger(__name__)
 
 
 class HTPController(object):
@@ -32,7 +35,17 @@ class HTPController(object):
         worker_thread.daemon = True
         worker_thread.start()
 
+    def command_genmove(self):
+        """ This command tells the engine to make a move, which he will return as a response. """
+        logging.debug("sending command genmove")
+        self._pipe_out.write(b"genmove\n")
+
+        # This actually sends the command..
+        self._pipe_out.flush()
+
     def _reader(self):
         """ Intended to run as a thread, continually calls readline() on pipe_in and places the input in self.responses. """
         while True:
-            self.responses.put(self._pipe_in.readline())
+            in_data = self._pipe_in.readline()
+            logging.debug("in_data: {}".format(in_data))
+            self.responses.put(in_data)

@@ -128,7 +128,7 @@ class HecksWebClient():
 
         Return True on success or Fail on failure.
         """
-        logging.info("Playing move: {}".format(move))
+        logging.info("Playing move: {}".format(repr(move)))
         if self.game is None:
             raise ClientError("play_move called with no game active")
 
@@ -147,7 +147,7 @@ class HecksWebClient():
 
             js_command = MAKE_MOVE_JS.format(x=new_move[0], y=new_move[1], game_id=self.game["_id"])
 
-        logging.debug("Sending command for execution: {}".format(js_command))
+        logging.debug("Sending command for execution: {}".format(repr(js_command)))
 
         self._execution_priority_queue.put((MOVE_PRIORITY, js_command, None))
 
@@ -182,7 +182,7 @@ class HecksWebClient():
 
             self._driver.find_element_by_class_name(MATCH_BUTTON_CLASS).click()
         else:
-            logging.info("Connecting to existing game: {}".format(id))
+            logging.info("Connecting to existing game: {}".format(repr(id)))
             self._driver.get(HECKS_URL + "/game/{}".format(id))
 
         self._stop_poll_event.clear()
@@ -193,7 +193,7 @@ class HecksWebClient():
         while self.game is None:
             time.sleep(0.5)
 
-        logging.info("Game started! We are playing as: {}".format(self.color))
+        logging.info("Game started! We are playing as: {}".format(repr(self.color)))
         return self.color
 
     def wait_for_move(self, player, timeout=None):
@@ -207,6 +207,8 @@ class HecksWebClient():
         """
         if not self.game:
             raise ClientError("wait_for_move called with no game active")
+
+        logging.info("Waiting for move for player: {}".format(repr(player)))
 
         w = 0
         while player == self.current_player:
@@ -229,7 +231,7 @@ class HecksWebClient():
         while True:
             priority, script, function = self._execution_priority_queue.get()
             if priority < POLL_PRIORITY:
-                logging.debug("Executing script: {}".format(script))
+                logging.debug("[EXECUTOR] Executing script: {}".format(repr(script)))
             out = self._driver.execute_script(script)
             if function is not None:
                 function(out)
@@ -264,18 +266,18 @@ class HecksWebClient():
         x, y = coordinates_string[0], coordinates_string[1:]
 
         if not x.isalpha():
-            logging.warning("Invalid input to parse_htp_coordinates: {}".format(coordinates_string))
+            logging.warning("Invalid input to parse_htp_coordinates: {}".format(repr(coordinates_string)))
             return None
         x = ord(x.lower()) - ord('a')
 
         try:
             y = 20 - int(y)
         except ValueError:
-            logging.warning("Invalid input to parse_htp_coordinates: {}".format(coordinates_string))
+            logging.warning("Invalid input to parse_htp_coordinates: {}".format(repr(coordinates_string)))
             return None
 
         if x < 0 or x > 19 or y < 0 or y > 20:
-            logging.warning("Invalid input to parse_htp_coordinates: {}".format(coordinates_string))
+            logging.warning("Invalid input to parse_htp_coordinates: {}".format(repr(coordinates_string)))
             return None
 
         return x, y
@@ -302,7 +304,7 @@ class HecksWebClient():
         try:
             x, y = (HecksWebClient.one_char_conversion(c) for c in coordinates_string)
         except ValueError:
-            logging.warning("Invalid input to parse_server_coordinates: {}".format(coordinates_string))
+            logging.warning("Invalid input to parse_server_coordinates: {}".format(repr(coordinates_string)))
             return None
 
         return chr(x + ord('a') - 1) + str(21 - y)
@@ -316,7 +318,7 @@ class HecksWebClient():
                 idx = int(c) + 1
 
             if idx < 1 or idx > 20:
-                msg = "Invalid character for one_char_conversion: {}".format(c)
+                msg = "Invalid character for one_char_conversion: {}".format(repr(c))
                 raise ValueError(msg)
 
             return idx

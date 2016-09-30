@@ -16,6 +16,7 @@ BLUE = "B"
 
 WAIT_TIMEOUT = 1200  # It's going to take a lot to make us give up...
 
+
 def main(command, username, password):
     """
     The main method of the program.
@@ -32,20 +33,23 @@ def main(command, username, password):
     web_client = HecksWebClient(username, password)
     engine_color = web_client.start_game()
     if engine_color is None:
-        logging.error('Recieved color None from web client. Unable to start game.')
+        logging.error('Received color None from web client. Unable to start game.')
+        exit(-1)
 
     enemey_color = (BLUE if engine_color == RED else RED)
 
     while True:
         move = web_client.wait_for_move(enemey_color, timeout=WAIT_TIMEOUT)
         if move:
-            controller.command_play(enemey_color, coordinates)
+            controller.command_play(enemey_color, move)
 
         played_succesfully = False
-        while ! played_succesfully:
+        while not played_succesfully:
             controller.command_genmove(engine_color)
             move = controller.move_queue.get()
+            logging.info("Got move {}, attempting to play it.".format(repr(move)))
             played_succesfully = web_client.play_move(move)
+
 
 if __name__ == "__main__":
     logging.basicConfig(filename='logs/main.log', level=logging.DEBUG, format='%(asctime)s : %(name)s : %(levelname)s : %(message)s')

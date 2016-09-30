@@ -6,7 +6,7 @@ For any other command the "engine" will respond with success (=\n)
 """
 import sys
 import logging
-logging.basicConfig(filename='logs/main.log', level=logging.DEBUG, format='%(asctime)s : %(name)s : %(levelname)s : %(message)s')
+logging.basicConfig(filename='logs/engine.log', level=logging.DEBUG, format='%(asctime)s : %(name)s : %(levelname)s : %(message)s')
 logging = logging.getLogger("engine")
 
 

@@ -16,6 +16,9 @@ BLUE = "B"
 FAIL_PREFIX = "?"
 SUCCESS_PREFIX = "="
 
+PASS = "pass"
+RESIGN = "resign"
+
 
 class HTPController(object):
     """
@@ -115,6 +118,9 @@ class HTPController(object):
     @staticmethod
     def valid_htp_coordinates(coordinates):
         """ Return True if given coordinates are valid HTP coordinates. """
+        if coordinates == "pass" or coordinates == "resign":
+            return True
+
         if not (2 <= len(coordinates) <= 3):
             return False
 

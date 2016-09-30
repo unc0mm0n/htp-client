@@ -49,7 +49,7 @@ def main(command, username, password):
             controller.command_genmove(engine_color)
             move = controller.move_queue.get()
             logging.info("Got move {}, attempting to play it.".format(repr(move)))
-            played_succesfully = web_client.play_move(move)
+            played_succesfully = web_client.play_move(move, engine_color)
 
 
 if __name__ == "__main__":

@@ -96,7 +96,11 @@ class HecksWebClient():
     def current_player(self):
         if not self.game:
             return None
-        return BLUE if self.game["turn"] % 2 == 0 else RED
+        try:
+            return BLUE if self.game["turn"] % 2 == 0 else RED
+        except Exception:
+            logging.error("No turn variable in game.. {}".format(self.game))
+            return None
 
     def connect(self, username, password):
         """
@@ -122,15 +126,24 @@ class HecksWebClient():
         self._stop_poll_event.set()
         self._driver.close()
 
-    def play_move(self, move):
+    def play_move(self, move, color):
         """
         Accept a move as an HTP coordinates str, and attempt to play it on the board.
 
         Return True on success or Fail on failure.
+
+        The color option is redundant for now, as we only play games where we have one color, but it might be useful in the future
+        if we want to implement move analysis.
+        :param move: HTP notation of move to play.
+        :param color: HTP notation of color to play ("R" or "B")
+        :return: True if move was played, False otherwise.
         """
-        logging.info("Playing move: {}".format(repr(move)))
+        logging.info("Playing move: {} for player: {}".format(repr(move), format(repr(color))))
         if self.game is None:
             raise ClientError("play_move called with no game active")
+
+        if self.current_player != color:
+            return False
 
         if move == HTP_PASS:
             js_command = PASS_JS.format(game_id=self.game["_id"])
@@ -143,26 +156,32 @@ class HecksWebClient():
             if last_move == move:
                 return False
 
-            new_move = self.parse_htp_coordinates(move)
+            x, y = self.parse_htp_coordinates(move)
 
-            js_command = MAKE_MOVE_JS.format(x=new_move[0], y=new_move[1], game_id=self.game["_id"])
+            if len(self.game["dotsData"][y]) <= x or self.game["dotsData"][y][x] != 0:
+                logging.warning("Move {} wasn't played! It was deemed an invalid coordinate (not on the board or not empty)".format(repr(move)))
+                return False
+
+            js_command = MAKE_MOVE_JS.format(x=x, y=y, game_id=self.game["_id"])
 
         logging.debug("Sending command for execution: {}".format(repr(js_command)))
 
         self._execution_priority_queue.put((MOVE_PRIORITY, js_command, None))
 
-        if self.game["lastMove"] == last_move_str:
-            w = 0
-            while w < MOVE_WAIT_TIME:
-                if self.game["lastMove"] != last_move_str:
-                    return True
-                time.sleep(DEFAULT_POLL_DELAY)
-                w += DEFAULT_POLL_DELAY
-            if self.game["lastMove"] != last_move_str:
+        w = 0
+
+        while True:  # Because quasi-infinite loops are fun.
+
+            if self.current_player != color:
+                return True
+            logging.warning("Move {} still wasn't updated. wait time: {} timeout: {}".format(repr(move), repr(w), repr(MOVE_WAIT_TIME)))
+            time.sleep(DEFAULT_POLL_DELAY)  # We sleep the approximate time it takes the game to update, for obvious reasons.
+
+            w += DEFAULT_POLL_DELAY
+
+            if w > MOVE_WAIT_TIME:
                 logging.warning("Move {} wasn't played! It might be invalid or the server isn't responding.".format(repr(move)))
-            return self.game["lastMove"] != last_move_str
-        else:
-            return True
+                return False
 
     def start_game(self, id=None):
         """

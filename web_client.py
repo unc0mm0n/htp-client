@@ -34,6 +34,8 @@ RESIGN_JS = 'Meteor.call("games.resign", "{game_id}")'
 # HTP constants
 HTP_PASS = "pass"
 HTP_RESIGN = "resign"
+RED = "R"
+BLUE = "B"
 
 # Default settings
 DEFAULT_POLL_DELAY = 0.1
@@ -64,6 +66,7 @@ class HecksWebClient():
         """
 
         self.game = None  # Here we will hold the game object updated by self._poll_game
+        self.username = username
 
         self._driver = webdriver.Firefox()
         self._execution_priority_queue = PriorityQueue()
@@ -75,6 +78,25 @@ class HecksWebClient():
         executor_thread.start()
 
         self.connect(username, password)
+
+    @property
+    def color(self):
+        """ Returns our color in the game, or None if we are not in a game (or not playing) """
+        if not self.game:
+            return None
+
+        if self.game["name1"] == self.username:
+            return BLUE
+        elif self.game["name2"] == self.username:
+            return RED
+        else:
+            return None
+
+    @property
+    def current_player(self):
+        if not self.game:
+            return None
+        return BLUE if self.game["turn"] % 2 == 0 else RED
 
     def connect(self, username, password):
         """
@@ -108,8 +130,7 @@ class HecksWebClient():
         """
         logging.info("Playing move: {}".format(move))
         if self.game is None:
-            logging.warning("play_move called when no game object is loaded!")
-            return False
+            raise ClientError("play_move called with no game active")
 
         if move == HTP_PASS:
             js_command = PASS_JS.format(game_id=self.game["_id"])
@@ -143,9 +164,12 @@ class HecksWebClient():
 
     def start_game(self, id=None):
         """
-        Tell the web server we want to start a new game, and block until a game start.
+        Try to start a new game on the web server, and block until it succeeds.
 
-        if we pass a game id, the client will attempt to connect to given ID instead of starting a new game.
+        If a game id is passed, the client will attempt to connect to given ID instead of starting a new game.
+        Will return the client's color in the game.
+        :param id: ID of game to join. Can be used to reconnect or to observe a game.
+        :return: The client's color in the game
         """
         if id is None:
             logging.info("Startign a new game.")
@@ -169,7 +193,29 @@ class HecksWebClient():
         while self.game is None:
             time.sleep(0.5)
 
-        logging.info("Game started! {}".format(self.game))
+        logging.info("Game started! We are playing as: {}".format(self.color))
+        return self.color
+
+    def wait_for_move(self, player, timeout=None):
+        """
+        Block until a move is played by the player or until maximum timeout is reached. Return immediately if it's not the player's turn.
+
+        Raise TimeoutError if timeout is reached without play.
+        :param player: color of player to play.
+        :param timeout: (default=None) maximum time to wait for move. If None will block indefinitely.
+        :return: HTP-Compliant notation of the last move played.
+        """
+        if not self.game:
+            raise ClientError("wait_for_move called with no game active")
+
+        w = 0
+        while player == self.current_player:
+            time.sleep(0.2)
+            w += 0.2
+            if timeout and w > timeout:
+                raise TimeoutError("wait for move timeout expired")
+
+        return self.parse_server_coordinates(self.game["lastMove"])
 
     def _executor(self):
         """

@@ -10,12 +10,19 @@ import time
 
 logging = logging.getLogger(__name__)
 
+RED = "R"
+BLUE = "B"
+
+FAIL_PREFIX = "?"
+SUCCESS_PREFIX = "="
+
 
 class HTPController(object):
     """
     The controller class for the protocol.
 
-    Use HTPController.send, or one of the command functions, to send commands to pipe_out, and 
+    Use HTPController.send, or one of the command functions, to send commands to pipe_out, and read moves from HTPController.move_queue
+    or errors from HTPController.fail_queue.
     """
 
     def __init__(self, pipe_in, pipe_out):
@@ -31,19 +38,37 @@ class HTPController(object):
         self._pipe_out = pipe_out
 
         self._response_queue = Queue()
-        self._move_queue = Queue()
-        self._fail_queue = Queue()
+
+        self.move_queue = Queue()
+        self.fail_queue = Queue()
 
         worker_thread = Thread(target=self._reader, name="pipe-in-reader")
         worker_thread.daemon = True
         worker_thread.start()
 
-    def command_genmove(self):
-        """ [Command] Tell the engine to make a move, which he will return as a response and will be stored in self._move_queue. """
-        logging.debug("sending command genmove")
-        self._pipe_out.write(b"genmove\n")
+    def command_genmove(self, color):
+        """
+        [Command] Tell the engine to decide on a move for given color, which he will return as a coordinates response
+        and will be stored in self.move_queue.
+        """
+        logging.debug("sending command: genmove {}".format(color))
+        if color.upper() not in (RED, BLUE):
+            raise ValueError("Invalid color to command genmove.")
+        self.send_command(b"genmove {}\n".format(color.upper()))
 
-        # This actually sends the command..
+    def command_play(self, color, coordinates):
+        """ [Command] Tell the engine to make given move internally. """
+        logging.debug("sending command: play {} {}".format(color.upper(), coordinates))
+        if color.upper() not in (RED, BLUE):
+            raise ValueError("Invalid color to command play.")
+        if not self.valid_htp_coordinates(coordinates):
+            raise ValueError("Invalid coordinates to command play.")
+
+        self.send_command(b"play {} {}\n".format(color, coordinates))
+
+    def send_command(self, cmd):
+        """ Send any command given as cmd to _pipe_out, with no validations. """
+        self._pipe_out.write(cmd)
         self._pipe_out.flush()
 
     def _reader(self):
@@ -62,9 +87,20 @@ class HTPController(object):
             response.replace("\r", "").replace("\t", " ")
 
             result, response_data = response.split(" ", maxsplit=1)  # An expected response is formatted as =[id] response_data
-            id = None
 
-            if len(result) > 1:
-                result, id = result[0], result[1:]
+            if result[0] == FAIL_PREFIX:
+                self.fail_queue.put(response)
+            elif result[0] == SUCCESS_PREFIX:
+                if self.valid_htp_coordinates(response_data):
+                    self.move_queue.append(response_data)
 
-            # For the initial naive implementation we will just assume that any success response with data is a move
+            # For the initial naive implementation we will just assume that any success response whose data is valid coordinates is a move.
+
+    @staticmethod
+    def valid_htp_coordinates(coordinates):
+        """ Return True if given coordinates are valid HTP coordinates. """
+        if not (2 <= len(coordinates) <= 3):
+            return False
+
+        x, y = coordinates[0], coordinates[1:]
+        return x.isalpha() and y.isnum() and 'a' <= x <= 's' and 1 <= int(y) <= 20

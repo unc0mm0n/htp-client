@@ -11,6 +11,10 @@ import logging
 from htp_controller import HTPController
 from web_client import HecksWebClient
 
+RED = "R"
+BLUE = "B"
+
+WAIT_TIMEOUT = 1200  # It's going to take a lot to make us give up...
 
 def main(command, username, password):
     """
@@ -26,19 +30,22 @@ def main(command, username, password):
     controller = HTPController(prc.stdout, prc.stdin)
 
     web_client = HecksWebClient(username, password)
-    web_client.start_game("TCNwtTzD69AySe3LG")
+    engine_color = web_client.start_game()
+    if engine_color is None:
+        logging.error('Recieved color None from web client. Unable to start game.')
+
+    enemey_color = (BLUE if engine_color == RED else RED)
 
     while True:
-        controller.command_genmove()
-        response = controller.responses.get()
-        if b"out of data" in response:
-            logging.info("got out of data message")
-            web_client.disconnect()
-            break
-        else:
-            logging.info("got from engine: {}".format(response))
-            web_client.execute_script(response.strip().decode())
+        move = web_client.wait_for_move(enemey_color, timeout=WAIT_TIMEOUT)
+        if move:
+            controller.command_play(enemey_color, coordinates)
 
+        played_succesfully = False
+        while ! played_succesfully:
+            controller.command_genmove(engine_color)
+            move = controller.move_queue.get()
+            played_succesfully = web_client.play_move(move)
 
 if __name__ == "__main__":
     logging.basicConfig(filename='logs/main.log', level=logging.DEBUG, format='%(asctime)s : %(name)s : %(levelname)s : %(message)s')

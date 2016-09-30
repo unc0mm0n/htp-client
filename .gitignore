@@ -8,6 +8,7 @@
 Include
 Lib
 Scripts
+pip-selfcheck.json
 
 # .exe files which I was told shouldn't be here, though they are necessary for the program to run
 selenium

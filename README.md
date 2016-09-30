@@ -2,13 +2,27 @@
 
 This is an attempt to modify the [Go Text Protocol](http://www.lysator.liu.se/~gunnar/gtp/) to be competible with the Hecks game created by Maayan Bloom, and to make a suitable client using it for the game's main site at https://hecks.space.
 
+# The protocol #
+
 The Protocol will use the following grid notation to designate moves (sorry for the quality):
 
 ![ScreenShot](hecks-grid.jpg)
 
-(Note that indeed, not all intersections are valid moves!)
+Where letters precede numbers. I.E. "a3" is a valid move while "3a" is not.
 
-As well as the Colors "R" or "RED" for the red player and "B" or "BLUE" for the blue player.
+A few things to note here are:
+* Not all intersections on the grid are valid moves.
+* We abolish the Go convention of skipping I in the notation, I comes before J as it should.
+* Same as the GTP, "pass" will denote passing one's turn and "resign" a game resignation. That means these are valid moves.
+
+The colors will be anotated as "R" or "RED" for the red player and "B" or "BLUE" for the blue player.
+
+Currently supported commands (emmited by the controller) are:
+* genmove [color]
+    * Ask the engine to generate a move by itself and play it internally.
+    * Argument: color to generate move for.
+    * Success response: = [HTP-Move]
+    * Fail reasons: Game not initialized in engine. Not current player turn (this is optional as the enging is not required to keep track of turns).
 
 # Usage #
 Run `python main.py "Command to run your engine" "username" "password"`

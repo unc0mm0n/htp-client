@@ -6,6 +6,7 @@ HTP will send commands to the engine through pipe_out, and read the responses fr
 from queue import Queue
 from threading import Thread
 import logging
+import time
 
 logging = logging.getLogger(__name__)
 
@@ -14,7 +15,7 @@ class HTPController(object):
     """
     The controller class for the protocol.
 
-    Use HTPController.send, or one of the command functions, to send commands pipe_out, and read responses from the HTPController.responses Queue.
+    Use HTPController.send, or one of the command functions, to send commands to pipe_out, and 
     """
 
     def __init__(self, pipe_in, pipe_out):
@@ -29,14 +30,16 @@ class HTPController(object):
         self._pipe_in = pipe_in
         self._pipe_out = pipe_out
 
-        self.responses = Queue()
+        self._response_queue = Queue()
+        self._move_queue = Queue()
+        self._fail_queue = Queue()
 
         worker_thread = Thread(target=self._reader, name="pipe-in-reader")
         worker_thread.daemon = True
         worker_thread.start()
 
     def command_genmove(self):
-        """ This command tells the engine to make a move, which he will return as a response. """
+        """ [Command] Tell the engine to make a move, which he will return as a response and will be stored in self._move_queue. """
         logging.debug("sending command genmove")
         self._pipe_out.write(b"genmove\n")
 
@@ -47,5 +50,21 @@ class HTPController(object):
         """ Intended to run as a thread, continually calls readline() on pipe_in and places the input in self.responses. """
         while True:
             in_data = self._pipe_in.readline()
-            logging.debug("in_data: {}".format(in_data))
-            self.responses.put(in_data)
+            if in_data:
+                self._response_queue.put(in_data)
+                logging.debug("Adding response to Queue: {}".format(in_data))
+            time.sleep(0.2)
+
+    def _response_parser(self):
+        """ Intented to run as a thread, continually reads from self._response_queue and parses the results. """
+        while True:
+            response = self._response_queue.get()
+            response.replace("\r", "").replace("\t", " ")
+
+            result, response_data = response.split(" ", maxsplit=1)  # An expected response is formatted as =[id] response_data
+            id = None
+
+            if len(result) > 1:
+                result, id = result[0], result[1:]
+
+            # For the initial naive implementation we will just assume that any success response with data is a move

@@ -26,15 +26,18 @@ def main(command, username, password):
     controller = HTPController(prc.stdout, prc.stdin)
 
     web_client = HecksWebClient(username, password)
+    web_client.start_game("TCNwtTzD69AySe3LG")
+
     while True:
         controller.command_genmove()
         response = controller.responses.get()
-        if response:
-            logging.info("got from engine: {}".format(response))
-            web_client.execute_script(response)
-        else:
-            logging.info("got empty string from engine")
+        if b"out of data" in response:
+            logging.info("got out of data message")
+            web_client.disconnect()
             break
+        else:
+            logging.info("got from engine: {}".format(response))
+            web_client.execute_script(response.strip().decode())
 
 
 if __name__ == "__main__":

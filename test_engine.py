@@ -19,7 +19,7 @@ if __name__ == "__main__":
 
         while has_data:
             in_data = input()
-            logging.debug(in_data)
+            logging.debug("got: " + in_data)
 
             if "genmove" in in_data:
                 out = f.readline()

@@ -3,8 +3,11 @@ The web client uses Selenium with Firefox (future: or Chrome) to communicate wit
 which will send pipe them to the engine.
 """
 from selenium import webdriver
+from selenium.webdriver.support.ui import WebDriverWait
+from queue import PriorityQueue
+import threading
 import logging
-import json
+import time
 
 # This is just to prevent selenium from logging too much (Yeah I know, it's ugly over here..)
 selenium_logger = logging.getLogger('selenium.webdriver.remote.remote_connection')
@@ -12,10 +15,36 @@ selenium_logger = logging.getLogger('selenium.webdriver.remote.remote_connection
 selenium_logger.setLevel(logging.WARNING)
 logging = logging.getLogger(__name__)
 
+# Server constants
 HECKS_URL = "https://hecks.space"
 USERNAME_FIELD_ID = "at-field-username"
 PASSWORD_FIELD_ID = "at-field-password"
 SUBMIT_BUTTON_ID = "at-btn"
+MATCH_BUTTON_CLASS = "automatchInsert"
+
+SERVER_PASS = "pass"
+SERVER_RESIGN = "resign"
+
+# JS Commands - Most commands have empty spaces which should be filled with COMMAND.format(parameters=values)
+BOARD_INFO_JS = "return this.game"  # We poll this command to monitor the state of the game.
+MAKE_MOVE_JS = 'Meteor.call("games.makeTurn", {y}, {x}, "{game_id}")'  # This is the command used by the server  to play a move.
+PASS_JS = 'Meteor.call("games.pass", "{game_id}")'  # This is the command used by the server to pass.
+RESIGN_JS = 'Meteor.call("games.resign", "{game_id}")'
+
+# HTP constants
+HTP_PASS = "pass"
+HTP_RESIGN = "resign"
+
+# Default settings
+DEFAULT_POLL_DELAY = 0.1
+DEFAULT_PAGE_WAIT_TIMEOUT = 20
+
+# Time in seconds it will take before notifying a move failed. This shoudln't be too long in case of actual bad moves.
+# But should be long enoug for the client to process the move request.
+MOVE_WAIT_TIME = 2
+
+POLL_PRIORITY = 10  # Lower number is higher priority
+MOVE_PRIORITY = 1
 
 
 class HecksWebClient():
@@ -34,7 +63,17 @@ class HecksWebClient():
         :param password: password to use for connection
         """
 
+        self.game = None  # Here we will hold the game object updated by self._poll_game
+
         self._driver = webdriver.Firefox()
+        self._execution_priority_queue = PriorityQueue()
+
+        self._stop_poll_event = threading.Event()
+
+        executor_thread = threading.Thread(target=self._executor, name="client-executor")
+        executor_thread.daemon = True
+        executor_thread.start()
+
         self.connect(username, password)
 
     def connect(self, username, password):
@@ -44,6 +83,7 @@ class HecksWebClient():
         :param username: username to connect as
         :param password: password to use for connection
         """
+        logging.info("Connecting to Hecks at {}".format(HECKS_URL))
         self._driver.get(HECKS_URL)
         if "login" not in self._driver.current_url:
             raise ClientError("Unable to reach login page. Are you already logged in?")
@@ -53,9 +93,187 @@ class HecksWebClient():
         self._driver.find_element_by_id(PASSWORD_FIELD_ID).send_keys(password)
         self._driver.find_element_by_id(SUBMIT_BUTTON_ID).click()
 
-    def execute_script(self, script):
-        """ This just calls self._driver.run_script(script). Used for debugging. """
-        self._driver.execute_script(json.dumps(script.strip().encode()))
+        WebDriverWait(self._driver, DEFAULT_PAGE_WAIT_TIMEOUT).until(lambda x: "chat" in x.current_url)
+
+    def disconnect(self):
+        """ Close the webdriver window and stop the polling session. """
+        self._stop_poll_event.set()
+        self._driver.close()
+
+    def play_move(self, move):
+        """
+        Accept a move as an HTP coordinates str, and attempt to play it on the board.
+
+        Return True on success or Fail on failure.
+        """
+        logging.info("Playing move: {}".format(move))
+        if self.game is None:
+            logging.warning("play_move called when no game object is loaded!")
+            return False
+
+        if move == HTP_PASS:
+            js_command = PASS_JS.format(game_id=self.game["_id"])
+        elif move == HTP_RESIGN:
+            js_command = RESIGN_JS.format(game_id=self.game["_id"])
+        else:
+            last_move_str = self.game["lastMove"]
+            last_move = self.parse_server_coordinates(last_move_str)
+
+            if last_move == move:
+                return False
+
+            new_move = self.parse_htp_coordinates(move)
+
+            js_command = MAKE_MOVE_JS.format(x=new_move[0], y=new_move[1], game_id=self.game["_id"])
+
+        logging.debug("Sending command for execution: {}".format(js_command))
+
+        self._execution_priority_queue.put((MOVE_PRIORITY, js_command, None))
+
+        if self.game["lastMove"] == last_move_str:
+            w = 0
+            while w < MOVE_WAIT_TIME:
+                if self.game["lastMove"] != last_move_str:
+                    return True
+                time.sleep(DEFAULT_POLL_DELAY)
+                w += DEFAULT_POLL_DELAY
+            return self.game["lastMove"] != last_move_str
+        else:
+            return True
+
+    def start_game(self, id=None):
+        """
+        Tell the web server we want to start a new game, and block until a game start.
+
+        if we pass a game id, the client will attempt to connect to given ID instead of starting a new game.
+        """
+        if id is None:
+            logging.info("Startign a new game.")
+            self._driver.get(HECKS_URL + "/play")
+
+            if "play" not in self._driver.current_url:
+                raise ClientError("Unable to reach play page. Are you logged in?")
+
+            WebDriverWait(self._driver, DEFAULT_PAGE_WAIT_TIMEOUT).until(lambda x: x.find_element_by_class_name(MATCH_BUTTON_CLASS))
+
+            self._driver.find_element_by_class_name(MATCH_BUTTON_CLASS).click()
+        else:
+            logging.info("Connecting to existing game: {}".format(id))
+            self._driver.get(HECKS_URL + "/game/{}".format(id))
+
+        self._stop_poll_event.clear()
+        poll_game_thread = threading.Thread(target=self._poll_game, name="game-poll")
+        poll_game_thread.daemon = True
+        poll_game_thread.start()
+
+        while self.game is None:
+            time.sleep(0.5)
+
+        logging.info("Game started! {}".format(self.game))
+
+    def _executor(self):
+        """
+        Executes scripts one by one from the execution priority queue.
+
+        This method must run in it's own thread.
+
+        The queue is expected to contain tuples for priority, script, callback function. The callback function will be called with the return value of
+        the execution. The second element of the tuple can be None, in which case nothing will be done with the return value.
+        """
+        while True:
+            priority, script, function = self._execution_priority_queue.get()
+            if priority < POLL_PRIORITY:
+                logging.debug("Executing script: {}".format(script))
+            out = self._driver.execute_script(script)
+            if function is not None:
+                function(out)
+
+    def _poll_game(self, poll_delay=DEFAULT_POLL_DELAY):
+        """ This thread should be running at all times as long as a game is going, as it updates the game information in the client. """
+        def update_game(game):
+            self.game = game
+
+        self.poll_delay = poll_delay
+        while not self._stop_poll_event.is_set():
+            self._execution_priority_queue.put((POLL_PRIORITY, BOARD_INFO_JS, update_game))
+            time.sleep(poll_delay)
+
+    @staticmethod
+    def parse_htp_coordinates(coordinates_string):
+        """
+        Accept HTP-Notation coordinates and parse them into an (x,y) tuple which we can format into the hecks.space command, or SERVER_PASS,
+        SERVER_RESIGN if applicable.
+
+        :param coordinates_string: HTP-compliant coordinates string
+        :return: (x,y) tuple for integer value for the coordinates, or SERVER_PASS, SERVER_RESIGN. None on invalid input
+        """
+        if not coordinates_string:
+            return None
+
+        if coordinates_string == SERVER_PASS:
+            return HTP_PASS
+        elif coordinates_string == SERVER_RESIGN:
+            return HTP_RESIGN
+
+        x, y = coordinates_string[0], coordinates_string[1:]
+
+        if not x.isalpha():
+            logging.warning("Invalid input to parse_htp_coordinates: {}".format(coordinates_string))
+            return None
+        x = ord(x.lower()) - ord('a')
+
+        try:
+            y = 20 - int(y)
+        except ValueError:
+            logging.warning("Invalid input to parse_htp_coordinates: {}".format(coordinates_string))
+            return None
+
+        if x < 0 or x > 19 or y < 0 or y > 20:
+            logging.warning("Invalid input to parse_htp_coordinates: {}".format(coordinates_string))
+            return None
+
+        return x, y
+
+    @staticmethod
+    def parse_server_coordinates(coordinates_string):
+        """
+        Accept Server-Notation formatted coordinates and parse them into HTP-compliant move
+
+        Will return None if a falsy or invalid input is given.
+
+        :param coordinates_string: Coordinates string in server notation
+        :return: HTP-compliant Move or None on invalid string
+        """
+
+        if coordinates_string == SERVER_PASS:
+            return HTP_PASS
+        elif coordinates_string == SERVER_RESIGN:
+            return HTP_RESIGN
+
+        if not coordinates_string or len(coordinates_string) != 2:
+            return None
+
+        try:
+            x, y = (HecksWebClient.one_char_conversion(c) for c in coordinates_string)
+        except ValueError:
+            logging.warning("Invalid input to parse_server_coordinates: {}".format(coordinates_string))
+            return None
+
+        return chr(x + ord('a') - 1) + str(21 - y)
+
+    @staticmethod
+    def one_char_conversion(c):
+            """ Convert one character to it's base 10 integer value (in server notation) """
+            if c.isalpha():
+                idx = ord(c.lower()) - ord('a') + 11
+            else:
+                idx = int(c) + 1
+
+            if idx < 1 or idx > 20:
+                msg = "Invalid character for one_char_conversion: {}".format(c)
+                raise ValueError(msg)
+
+            return idx
 
 
 class ClientError(Exception):
@@ -63,4 +281,62 @@ class ClientError(Exception):
 
 
 if __name__ == "__main__":
-    client = HecksWebClient("asfffd", "asfffd")
+
+    # Test one_char_conversion
+    values = list(range(10)) + [chr(x) for x in range(97, 107)]
+    for idx, value in enumerate(values):
+        got = HecksWebClient.one_char_conversion(str(value))
+        print(value, got, idx + 1)
+        assert got == idx + 1
+
+    try:
+        HecksWebClient.one_char_conversion('t')
+    except ValueError:
+        print('t got value error as required')
+
+    try:
+        HecksWebClient.one_char_conversion('23')
+    except ValueError:
+        print('23 got value error as required')
+
+    try:
+        HecksWebClient.one_char_conversion('909f')
+    except ValueError:
+        print('909f got value error as required')
+
+    # Test parse_server_coordinates
+    for idx, value in enumerate(zip(values, values)):
+        server_coordinate = "{}{}".format(*value)
+        got = HecksWebClient.parse_server_coordinates(server_coordinate)
+        expected = "{}{}".format(chr(idx + ord('a')), 20 - idx)
+        print(server_coordinate, got, expected)
+        assert got == expected
+
+    got = HecksWebClient.parse_server_coordinates(SERVER_PASS)
+    print(got, HTP_PASS)
+    assert got == HTP_PASS
+
+    got = HecksWebClient.parse_server_coordinates(SERVER_RESIGN)
+    print(got, HTP_RESIGN)
+    assert got == HTP_RESIGN
+
+    got = HecksWebClient.parse_server_coordinates("asdfv3fg3")
+    print(got, None)
+    assert got is None
+
+    # Test parse_htp_coordinates
+    letters = [chr(ord('a') + i) for i in range(19)]
+    numbers = range(1, 21)
+    for idx, value in enumerate(zip(letters, numbers)):
+        htp_coordinate = "{}{}".format(*value)
+        got = HecksWebClient.parse_htp_coordinates(htp_coordinate)
+        print(htp_coordinate, got, (idx, 19 - idx))
+        assert got == (idx, 19 - idx)
+
+    for value, expected in [(HTP_PASS, SERVER_PASS), (HTP_RESIGN, SERVER_RESIGN), ("AA", None),
+                            ("11", None), ("A1A", None), ("Z1", None), ("z130", None)]:
+        got = HecksWebClient.parse_htp_coordinates(value)
+        print(value, repr(got), repr(expected))
+        assert got == expected
+
+    # client = HecksWebClient("asfffd", "asfffd")

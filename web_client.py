@@ -158,6 +158,8 @@ class HecksWebClient():
                     return True
                 time.sleep(DEFAULT_POLL_DELAY)
                 w += DEFAULT_POLL_DELAY
+            if self.game["lastMove"] != last_move_str:
+                logging.warning("Move {} wasn't played! It might be invalid or the server isn't responding.".format(repr(move)))
             return self.game["lastMove"] != last_move_str
         else:
             return True

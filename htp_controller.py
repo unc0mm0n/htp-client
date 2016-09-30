@@ -46,7 +46,7 @@ class HTPController(object):
         reader_thread.daemon = True
         reader_thread.start()
 
-        parser_thread = Thread(target = self._response_parser, name="response-queue-parser")
+        parser_thread = Thread(target=self._response_parser, name="response-queue-parser")
         parser_thread.daemon = True
         parser_thread.start()
 
@@ -123,7 +123,7 @@ class HTPController(object):
 
 
 if __name__ == "__main__":
-    
+
     # Test valid_htp_coordinates
     for value, expected in (("a1", True,), ("T5", False), ("S20", True), ("11", False),
                             ("aa", False), ("b-1", False), ("a111", False), ("1a", False), ("i5", True)):

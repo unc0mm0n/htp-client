@@ -5,6 +5,7 @@ As of right now, only supported argument is a command to run the engine process,
 Note that this command will run as a shell script with all relevant privilages! Be careful not to use "cd /; rm -rf *" as your engine command!
 """
 import sys
+import os
 import subprocess
 import logging
 
@@ -52,6 +53,11 @@ def main(command, username, password):
 
 
 if __name__ == "__main__":
+    try:
+        os.makedirs("logs", exist_ok=True)
+    except:
+        pass
+
     logging.basicConfig(filename='logs/main.log', level=logging.DEBUG, format='%(asctime)s : %(name)s : %(levelname)s : %(message)s')
     logging = logging.getLogger(__name__)
 

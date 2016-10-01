@@ -17,4 +17,7 @@ selenium
 engine_data.txt
 logs
 
+# Distribution files
 *.egg-info
+dist
+MANIFEST.in

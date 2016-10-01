@@ -7,7 +7,7 @@ def readme():
 
 
 setup(name='htp-client',
-      version='0.0.1',
+      version='0.1.1',
       description='Make a Hecks engine using the HTP protocol play on the hecks.space website',
       long_description=readme(),
       url='http://github.com/unc0mm0n/htp-client.git',
@@ -16,6 +16,7 @@ setup(name='htp-client',
       packages=['htpclient'],
       license='WTFPL',
       zip_safe=False,
+      include_package_data=True,
 
       install_requires=['selenium'],
 

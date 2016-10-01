@@ -4,9 +4,17 @@ This is an attempt to modify the [Go Text Protocol](http://www.lysator.liu.se/~g
 
 # Installation #
 
+### Option 1 ###
+
 * Make sure you have python 3.4.2 or greated installed (not tested with other versions).
 * Download the source code from github and navigate a command line to it's folder.
 * Run `pip install -r requirments.txt` (hopefully in a virtual environment)
+
+## Option 2 ###
+
+* Make sure you have python 3.4.2 or greated installed (not tested with other versions).
+* Run `pip install htp-client`
+* Use your new cli command `htpplay`. The signature is the same as in the usage section below.
 
 ## Troubleshooting ##
 

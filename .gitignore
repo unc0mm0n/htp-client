@@ -16,3 +16,5 @@ selenium
 # This is mostly debug data logged by the program, or used by the program for testing
 engine_data.txt
 logs
+
+*.egg-info

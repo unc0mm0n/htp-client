@@ -98,6 +98,22 @@ The Client requires Selenium webdrivers to run. In case you take the
 source code directly make sure to run pip install on the requirments.txt
 file.
 
+Required features before release 1.0.0
+======================================
+
++ Multiple games per session, with default to infinite - Decided by CLI options or settings file.
++ Infinite game search, the site seems to stop the search after not finding a match for a while.
++ Close the program gracefully by sending quit to the engine.
++ Support for changing of time controls - Decided by CLI options or settings file.
++ Suport for resuming mid games - Maybe sending the kifu at the start of a new game somehow. At the engine side this is just sending "play move color" for all already played moves. This is also required for engine analysis.
++ Commands: clear_board, time_settings, time_left
+
+Possible features for the future
+================================
+
++ Support for reg_genmove command and emission for game analysis.
++ CLI options to make calls to the showboard command.
+
 .. _Go Text Protocol: http://www.lysator.liu.se/~gunnar/gtp/
 
-.. |ScreenShot| image:: hecks-grid.jpg
+.. |ScreenShot| image:: http://i.imgur.com/JHoGBal.jpg

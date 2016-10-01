@@ -2,12 +2,12 @@ from setuptools import setup
 
 
 def readme():
-    with open('README.md') as f:
+    with open('README.rst', encoding="utf8") as f:
         return f.read()
 
 
 setup(name='htp-client',
-      version='0.1.1',
+      version='0.1.3',
       description='Make a Hecks engine using the HTP protocol play on the hecks.space website',
       long_description=readme(),
       url='http://github.com/unc0mm0n/htp-client.git',

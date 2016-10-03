@@ -38,8 +38,8 @@ The protocol
 
 The Protocol will use the following notation for the vertices of the board:
 The rows created by taking all points in the lower half of each hexagon in the lower half of the board and upper half of
- each hexagon in the upper half of the board (Giving zizagged lines) will be denoted by letters from 'a' to 'j' from
- bottom to top.
+each hexagon in the upper half of the board (Giving zizagged lines) will be denoted by letters from 'a' to 'j' from
+bottom to top.
 The leftmost vertex of each row will be denoted with 1, with numbers increasing sequentially along the row to the right.
 
 When writing the moves,letters precede numbers. I.E. “a3” is a valid move while “3a” is

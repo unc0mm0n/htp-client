@@ -65,9 +65,9 @@ class HTPController(object):
     def command_play(self, color, coordinates):
         """ [Command] Tell the engine to make given move internally. """
         if color.upper() not in (RED, BLUE):
-            raise ValueError("Invalid color to command play.")
+            raise ValueError("Invalid color to command play: {}".format(color))
         if not self.valid_htp_coordinates(coordinates):
-            raise ValueError("Invalid coordinates to command play.")
+            raise ValueError("Invalid coordinates to command play: {}".format(coordinates))
 
         self.send_command("play {} {}\n".format(color, coordinates))
 
@@ -133,18 +133,37 @@ class HTPController(object):
             if row_val <= 5:
                 max_col = 9 + 2 * row_val
             else:
-                max_col = 9 + 2 * (10 - row_val)
-            return row.isalpha() and 'a' <= row.lower() <= 'i' and 1 <= int(col) <= max_col
+                max_col = 9 + 2 * (11 - row_val)
+            return row.isalpha() and 'a' <= row.lower() <= 'j' and 1 <= int(col) <= max_col
         except ValueError:
             return False
 
 
 if __name__ == "__main__":
+    import random
+    import itertools
 
     # Test valid_htp_coordinates
-    for value, expected in (("a1", True,), ("T5", False), ("S20", False), ("11", False),
-                            ("aa", False), ("b-1", False), ("a111", False), ("1a", False), ("i5", True),
-                            ("a13", False),  ("a11", True)):
+    moves = []
+    for row in range(5):
+        for col in range(1, 11 + 2 * row):
+            row_letter = chr(ord('a') + row)
+            htp_vertex = "{}{}".format(row_letter, col)
+            moves.append(htp_vertex)
+
+            reflected_row_letter = chr(ord('a') + (9 - row))
+            htp_reflected_vertex = "{}{}".format(reflected_row_letter, col)
+            moves.append(htp_reflected_vertex)
+    random.shuffle(moves)
+    logging.debug("Moves: {}".format(moves))
+
+    for value, expected in map(lambda x: (x, True), moves):
+        got = HTPController.valid_htp_coordinates(value)
+        print(value, repr(got), repr(expected))
+        assert got == expected
+
+    for value, expected in (("pass", True), ("resign", True), ("A5", True), ("B13", True),
+                            ("11", False), ("a12", False), ("", False), ("aa", False), ("1a", False)):
         got = HTPController.valid_htp_coordinates(value)
         print(value, repr(got), repr(expected))
         assert got == expected

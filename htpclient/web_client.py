@@ -44,7 +44,7 @@ DEFAULT_PAGE_WAIT_TIMEOUT = 20
 
 # Time in seconds it will take before notifying a move failed. This shoudln't be too long in case of actual bad moves.
 # But should be long enoug for the client to process the move request.
-MOVE_WAIT_TIME = 2
+MOVE_WAIT_TIME = 5
 
 POLL_PRIORITY = 10  # Lower number is higher priority
 MOVE_PRIORITY = 1
@@ -71,13 +71,19 @@ class HecksWebClient(object):
 
         # Oww.. My Eyes... :'(
         if sys.platform in ('win32', 'cygwin'):
-            self._driver = webdriver.Chrome(os.path.join(os.path.dirname(os.path.realpath(__file__)),
-                                                         'selenium_drivers/chromedriver.exe'))
+            chrome_path = os.path.join(os.path.dirname(os.path.realpath(__file__)),
+                                                         'selenium_drivers/chromedriver.exe')
+            driver_log_path = 'nul'
         elif sys.platform == "linux2":
-            self._driver = webdriver.Chrome(os.path.join(os.path.dirname(os.path.realpath(__file__)),
-                                                         'selenium_drivers/chromedriver'))
+            chrome_path = os.path.join(os.path.dirname(os.path.realpath(__file__)),
+                                                         'selenium_drivers/chromedriver.exe')
+            driver_log_path = '/dev/null'
         else:
-            ClientError("Operation system is not currently supported. ")
+            raise ClientError("Operation system is not currently supported. ")
+
+        if chrome_path:
+            logging.info("Starting web driver at {}, logs will (not) be saved at {}".format(chrome_path, driver_log_path))
+            self._driver = webdriver.Chrome(chrome_path, service_log_path=driver_log_path)
 
         self._execution_priority_queue = PriorityQueue()
 
@@ -203,7 +209,7 @@ class HecksWebClient(object):
         :return: The client's color in the game
         """
         if id is None:
-            logging.info("Startign a new game.")
+            logging.info("Starting a new game.")
             self._driver.get(HECKS_URL + "/play")
 
             if "play" not in self._driver.current_url:
@@ -411,6 +417,7 @@ if __name__ == "__main__":
         print('909f got value error as required')
 
     # Test parse_server_coordinates
+
     for value, expected in (("00", None), ("40", None), ("41", "j1"), ("50", "j2"), ("51", None), ("60", None), ("61", "j3"),
                             ("45", "h3"), ("0i", None), ("4i", "a1"), ("5j", "a2"), ("5i", None), ("6j", None), ("6i", "a3")):
         got = HecksWebClient.parse_server_coordinates(value)
@@ -443,4 +450,4 @@ if __name__ == "__main__":
         print(value, repr(got), repr(expected))
         assert got == expected
 
-    # client = HecksWebClient("asfffd", "asfffd")
+    client = HecksWebClient("asfffd", "asffffd")

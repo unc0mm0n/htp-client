@@ -166,7 +166,7 @@ class HecksWebClient(object):
             if last_move == move:
                 return False
 
-            x, y = self.parse_htp_coordinates(move)
+            y, x = self.parse_htp_coordinates(move)
 
             if len(self.game["dotsData"][y]) <= x or self.game["dotsData"][y][x] != 0:
                 logging.warning("Move {} wasn't played! It was deemed an invalid coordinate (not on the board or not empty)".format(repr(move)))
@@ -280,11 +280,11 @@ class HecksWebClient(object):
     @staticmethod
     def parse_htp_coordinates(coordinates_string):
         """
-        Accept HTP-Notation coordinates and parse them into an (x,y) tuple which we can format into the hecks.space command, or SERVER_PASS,
-        SERVER_RESIGN if applicable.
+        Accept HTP-Notation vertex and parse them into an (x,y) tuple which we can format into the hecks.space command,
+        or SERVER_PASS, SERVER_RESIGN if applicable.
 
         :param coordinates_string: HTP-compliant coordinates string
-        :return: (x,y) tuple for integer value for the coordinates, or SERVER_PASS, SERVER_RESIGN. None on invalid input
+        :return: (y,x) tuple for integer value for the coordinates, or SERVER_PASS, SERVER_RESIGN. None on invalid input
         """
         if not coordinates_string:
             return None
@@ -294,24 +294,35 @@ class HecksWebClient(object):
         elif coordinates_string == SERVER_RESIGN:
             return HTP_RESIGN
 
-        x, y = coordinates_string[0], coordinates_string[1:]
-
-        if not x.isalpha():
-            logging.warning("Invalid input to parse_htp_coordinates: {}".format(repr(coordinates_string)))
-            return None
-        x = ord(x.lower()) - ord('a')
-
         try:
-            y = 20 - int(y)
+            y, x = coordinates_string[0], int(coordinates_string[1:])
+
+            if not y.isalpha():
+                logging.warning("Invalid input to parse_htp_coordinates: {}".format(repr(coordinates_string)))
+                return None
+            y = (ord(y.lower()) - ord('a')) + 1  # convert 'a'-'j' into 1-10
+
+            if y <= 5:
+                server_x = int(x) + (4 - y)  # The first coordinate of a row of distance d from the center is moved d + 1
+                                             # spots to the right, so we add them back.
+            else:
+                server_x = int(x) + (y - 7)  # Same goes for the top half
         except ValueError:
             logging.warning("Invalid input to parse_htp_coordinates: {}".format(repr(coordinates_string)))
             return None
 
-        if x < 0 or x > 19 or y < 0 or y > 20:
-            logging.warning("Invalid input to parse_htp_coordinates: {}".format(repr(coordinates_string)))
+        if y <= 5:
+            # On the bottom half, the even columns of each row are at the bottom
+            server_y = 2 * (10 - y) + 1 - x % 2
+        else:
+            # On the bottom half, it is exactly the opposite.
+            server_y = 2 * (10 - y) + x % 2
+
+        if server_x < 0 or server_x > 19 or server_y < 0 or server_y > 20:
+            logging.warning("Invalid input to parse_htp_coordinates: {}. Got {}".format(repr(coordinates_string), (y,x)))
             return None
 
-        return x, y
+        return server_y, server_x
 
     @staticmethod
     def parse_server_coordinates(coordinates_string):
@@ -337,18 +348,34 @@ class HecksWebClient(object):
         except ValueError:
             logging.warning("Invalid input to parse_server_coordinates: {}".format(repr(coordinates_string)))
             return None
+        htp_y = 10 - y // 2  # convert '0-19' into '10-1'
 
-        return chr(x + ord('a') - 1) + str(21 - y)
+        # On odd rows, the sum of coordinates is even and on even rows the sum is odd.
+        if (x + y + htp_y) % 2 == 0:
+            logging.warning("Invalid input to parse_server_coordinates: {}".format(repr(coordinates_string)))
+            return None
+
+        if htp_y <= 5:
+            max_x = 9 + 2 * y
+            htp_x = x - (4 - htp_y)
+        else:
+            max_x = 9 + 2 * (11 - y)
+            htp_x = x - (htp_y - 7)
+
+        if htp_x < 1 or htp_x > max_x or htp_y < 1 or htp_y > 10:
+            logging.warning("Invalid input to parse_server_coordinates: {}. got {}".format(repr(coordinates_string), (htp_y, htp_x)))
+            return None
+        return chr(htp_y + ord('a') - 1) + str(htp_x)
 
     @staticmethod
     def one_char_conversion(c):
-            """ Convert one character to it's base 10 integer value (in server notation) """
+            """ Convert one character to it's base 10 integer value (in server notation, starting from 0). """
             if c.isalpha():
-                idx = ord(c.lower()) - ord('a') + 11
+                idx = ord(c.lower()) - ord('a') + 10
             else:
-                idx = int(c) + 1
+                idx = int(c)
 
-            if idx < 1 or idx > 20:
+            if idx < 0 or idx > 19:
                 msg = "Invalid character for one_char_conversion: {}".format(repr(c))
                 raise ValueError(msg)
 
@@ -365,8 +392,8 @@ if __name__ == "__main__":
     values = list(range(10)) + [chr(x) for x in range(97, 107)]
     for idx, value in enumerate(values):
         got = HecksWebClient.one_char_conversion(str(value))
-        print(value, got, idx + 1)
-        assert got == idx + 1
+        print(value, got, idx)
+        assert got == idx
 
     try:
         HecksWebClient.one_char_conversion('t')
@@ -384,11 +411,10 @@ if __name__ == "__main__":
         print('909f got value error as required')
 
     # Test parse_server_coordinates
-    for idx, value in enumerate(zip(values, values)):
-        server_coordinate = "{}{}".format(*value)
-        got = HecksWebClient.parse_server_coordinates(server_coordinate)
-        expected = "{}{}".format(chr(idx + ord('a')), 20 - idx)
-        print(server_coordinate, got, expected)
+    for value, expected in (("00", None), ("40", None), ("41", "j1"), ("50", "j2"), ("51", None), ("60", None), ("61", "j3"),
+                            ("45", "h3"), ("0i", None), ("4i", "a1"), ("5j", "a2"), ("5i", None), ("6j", None), ("6i", "a3")):
+        got = HecksWebClient.parse_server_coordinates(value)
+        print(value, got, expected)
         assert got == expected
 
     got = HecksWebClient.parse_server_coordinates(SERVER_PASS)
@@ -404,13 +430,12 @@ if __name__ == "__main__":
     assert got is None
 
     # Test parse_htp_coordinates
-    letters = [chr(ord('a') + i) for i in range(19)]
-    numbers = range(1, 21)
-    for idx, value in enumerate(zip(letters, numbers)):
-        htp_coordinate = "{}{}".format(*value)
-        got = HecksWebClient.parse_htp_coordinates(htp_coordinate)
-        print(htp_coordinate, got, (idx, 19 - idx))
-        assert got == (idx, 19 - idx)
+    for value, expected in [("a1", (18, 4)), ("f10", (8, 9)), ("j1", (1, 4)), ("j2", (0, 5)), ("j3", (1, 6)),
+                            ("j4", (0, 7)), ("j5", (1, 8)), ("j6", (0, 9)), ("j11", (1, 14)), ("j12", (0, 15)),
+                            ("I12", (2, 14))]:
+        got = HecksWebClient.parse_htp_coordinates(value)
+        print(value, got, expected)
+        assert got == expected
 
     for value, expected in [(HTP_PASS, SERVER_PASS), (HTP_RESIGN, SERVER_RESIGN), ("AA", None),
                             ("11", None), ("A1A", None), ("Z1", None), ("z130", None)]:

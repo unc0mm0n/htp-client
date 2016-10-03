@@ -124,15 +124,27 @@ class HTPController(object):
         if not (2 <= len(coordinates) <= 3):
             return False
 
-        x, y = coordinates[0], coordinates[1:]
-        return x.isalpha() and y.isdigit() and 'a' <= x.lower() <= 's' and 1 <= int(y) <= 20
+        row, col = coordinates[0], coordinates[1:]
+        try:
+
+            row_val = ord(row.lower()) - ord('a') + 1
+            col = int(col)
+
+            if row_val <= 5:
+                max_col = 9 + 2 * row_val
+            else:
+                max_col = 9 + 2 * (10 - row_val)
+            return row.isalpha() and 'a' <= row.lower() <= 'i' and 1 <= int(col) <= max_col
+        except ValueError:
+            return False
 
 
 if __name__ == "__main__":
 
     # Test valid_htp_coordinates
-    for value, expected in (("a1", True,), ("T5", False), ("S20", True), ("11", False),
-                            ("aa", False), ("b-1", False), ("a111", False), ("1a", False), ("i5", True)):
+    for value, expected in (("a1", True,), ("T5", False), ("S20", False), ("11", False),
+                            ("aa", False), ("b-1", False), ("a111", False), ("1a", False), ("i5", True),
+                            ("a13", False),  ("a11", True)):
         got = HTPController.valid_htp_coordinates(value)
         print(value, repr(got), repr(expected))
         assert got == expected

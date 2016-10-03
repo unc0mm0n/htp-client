@@ -1,5 +1,5 @@
 """
-The web client uses Selenium with Firefox (future: or Chrome) to communicate with the hecks.space website and relay events to the HTP controller,
+The web client uses Selenium with Chrome (future: or Firefox) to communicate with the hecks.space website and relay events to the HTP controller,
 which will send pipe them to the engine.
 """
 from selenium import webdriver
@@ -8,6 +8,7 @@ from queue import PriorityQueue
 import threading
 import logging
 import time
+import sys, os
 
 # This is just to prevent selenium from logging too much (Yeah I know, it's ugly over here..)
 selenium_logger = logging.getLogger('selenium.webdriver.remote.remote_connection')
@@ -49,7 +50,7 @@ POLL_PRIORITY = 10  # Lower number is higher priority
 MOVE_PRIORITY = 1
 
 
-class HecksWebClient():
+class HecksWebClient(object):
     """
     The class that manages the web client.
 
@@ -68,7 +69,16 @@ class HecksWebClient():
         self.game = None  # Here we will hold the game object updated by self._poll_game
         self.username = username
 
-        self._driver = webdriver.Firefox()
+        # Oww.. My Eyes... :'(
+        if sys.platform in ('win32', 'cygwin'):
+            self._driver = webdriver.Chrome(os.path.join(os.path.dirname(os.path.realpath(__file__)),
+                                                         'selenium_drivers/chromedriver.exe'))
+        elif sys.platform == "linux2":
+            self._driver = webdriver.Chrome(os.path.join(os.path.dirname(os.path.realpath(__file__)),
+                                                         'selenium_drivers/chromedriver'))
+        else:
+            ClientError("Operation system is not currently supported. ")
+
         self._execution_priority_queue = PriorityQueue()
 
         self._stop_poll_event = threading.Event()

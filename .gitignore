@@ -3,6 +3,7 @@
 *.pyc
 *.indd
 *.psd
+__pycache__
 
 # Virtualenv folders
 Include

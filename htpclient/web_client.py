@@ -47,7 +47,8 @@ DEFAULT_PAGE_WAIT_TIMEOUT = 20
 MOVE_WAIT_TIME = 5
 
 POLL_PRIORITY = 10  # Lower number is higher priority
-MOVE_PRIORITY = 1
+MOVE_PRIORITY = 3
+QUIT_PRIORITY = 1
 
 
 class HecksWebClient(object):
@@ -60,7 +61,7 @@ class HecksWebClient(object):
 
     def __init__(self, username, password):
         """
-        Initialize a new client, connecting to hecks with the given username and password.
+        Initialize a new client. Call connect to make is start
 
         :param username: username to connect as
         :param password: password to use for connection
@@ -68,15 +69,16 @@ class HecksWebClient(object):
 
         self.game = None  # Here we will hold the game object updated by self._poll_game
         self.username = username
+        self.__password = password
 
         # Oww.. My Eyes... :'(
         if sys.platform in ('win32', 'cygwin'):
             chrome_path = os.path.join(os.path.dirname(os.path.realpath(__file__)),
-                                                         'selenium_drivers/chromedriver.exe')
+                                                       'selenium_drivers/chromedriver.exe')
             driver_log_path = 'nul'
         elif sys.platform == "linux2":
             chrome_path = os.path.join(os.path.dirname(os.path.realpath(__file__)),
-                                                         'selenium_drivers/chromedriver.exe')
+                                                       'selenium_drivers/chromedriver')
             driver_log_path = '/dev/null'
         else:
             raise ClientError("Operation system is not currently supported. ")
@@ -92,8 +94,6 @@ class HecksWebClient(object):
         executor_thread = threading.Thread(target=self._executor, name="client-executor")
         executor_thread.daemon = True
         executor_thread.start()
-
-        self.connect(username, password)
 
     @property
     def color(self):
@@ -118,21 +118,27 @@ class HecksWebClient(object):
             logging.error("No turn variable in game.. {}".format(self.game))
             return None
 
-    def connect(self, username, password):
+    @property
+    def in_game(self):
+        return self.game is None or not self.game.get("result", False)
+
+    def connect(self):
         """
         Launch a web page to hecks and attempt to connect to given username and password.
 
         :param username: username to connect as
         :param password: password to use for connection
         """
+
         logging.info("Connecting to Hecks at {}".format(HECKS_URL))
         self._driver.get(HECKS_URL)
+
         if "login" not in self._driver.current_url:
             raise ClientError("Unable to reach login page. Are you already logged in?")
 
         # Find the fields and submit
-        self._driver.find_element_by_id(USERNAME_FIELD_ID).send_keys(username)
-        self._driver.find_element_by_id(PASSWORD_FIELD_ID).send_keys(password)
+        self._driver.find_element_by_id(USERNAME_FIELD_ID).send_keys(self.username)
+        self._driver.find_element_by_id(PASSWORD_FIELD_ID).send_keys(self.__password)
         self._driver.find_element_by_id(SUBMIT_BUTTON_ID).click()
 
         WebDriverWait(self._driver, DEFAULT_PAGE_WAIT_TIMEOUT).until(lambda x: "chat" in x.current_url)
@@ -140,7 +146,7 @@ class HecksWebClient(object):
     def disconnect(self):
         """ Close the webdriver window and stop the polling session. """
         self._stop_poll_event.set()
-        self._driver.close()
+        self._execution_priority_queue.put((QUIT_PRIORITY, "return", self._driver.close))
 
     def play_move(self, move, color):
         """
@@ -155,7 +161,7 @@ class HecksWebClient(object):
         :return: True if move was played, False otherwise.
         """
         logging.info("Playing move: {} for player: {}".format(repr(move), format(repr(color))))
-        if self.game is None:
+        if not self.in_game:
             raise ClientError("play_move called with no game active")
 
         if self.current_player != color:
@@ -190,7 +196,7 @@ class HecksWebClient(object):
 
             if self.current_player != color:
                 return True
-            logging.warning("Move {} still wasn't updated. wait time: {} timeout: {}".format(repr(move), repr(w), repr(MOVE_WAIT_TIME)))
+            logging.debug("Move {} still wasn't updated. wait time: {} timeout: {}".format(repr(move), repr(w), repr(MOVE_WAIT_TIME)))
             time.sleep(DEFAULT_POLL_DELAY)  # We sleep the approximate time it takes the game to update, for obvious reasons.
 
             w += DEFAULT_POLL_DELAY
@@ -242,7 +248,7 @@ class HecksWebClient(object):
         :param timeout: (default=None) maximum time to wait for move. If None will block indefinitely.
         :return: HTP-Compliant notation of the last move played.
         """
-        if not self.game:
+        if not self.in_game:
             raise ClientError("wait_for_move called with no game active")
 
         logging.info("Waiting for move for player: {}".format(repr(player)))
@@ -325,7 +331,7 @@ class HecksWebClient(object):
             server_y = 2 * (10 - y) + x % 2
 
         if server_x < 0 or server_x > 19 or server_y < 0 or server_y > 20:
-            logging.warning("Invalid input to parse_htp_coordinates: {}. Got {}".format(repr(coordinates_string), (y,x)))
+            logging.warning("Invalid input to parse_htp_coordinates: {}. Got {}".format(repr(coordinates_string), (y, x)))
             return None
 
         return server_y, server_x

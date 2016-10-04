@@ -73,21 +73,16 @@ class HecksWebClient(object):
 
         # Oww.. My Eyes... :'(
         if sys.platform in ('win32', 'cygwin'):
-            chrome_path = os.path.join(os.path.dirname(os.path.realpath(__file__)),
+            self.chrome_path = os.path.join(os.path.dirname(os.path.realpath(__file__)),
                                                        'selenium_drivers/chromedriver.exe')
-            driver_log_path = 'nul'
         elif sys.platform == "linux2":
-            chrome_path = os.path.join(os.path.dirname(os.path.realpath(__file__)),
+            self.chrome_path = os.path.join(os.path.dirname(os.path.realpath(__file__)),
                                                        'selenium_drivers/chromedriver')
-            driver_log_path = '/dev/null'
         else:
             raise ClientError("Operation system is not currently supported. ")
 
-        if chrome_path:
-            logging.info("Starting web driver at {}, logs will (not) be saved at {}".format(chrome_path, driver_log_path))
-            self._driver = webdriver.Chrome(chrome_path, service_log_path=driver_log_path)
-
         self._execution_priority_queue = PriorityQueue()
+        self._execution_lock = threading.Lock()
 
         self._stop_poll_event = threading.Event()
 
@@ -131,6 +126,10 @@ class HecksWebClient(object):
         """
 
         logging.info("Connecting to Hecks at {}".format(HECKS_URL))
+        chrome_options = webdriver.ChromeOptions()
+        chrome_options.add_argument("--mute-audio")
+        chrome_options.add_argument("--silent")
+        self._driver = webdriver.Chrome(self.chrome_path, desired_capabilities=chrome_options.to_capabilities())
         self._driver.get(HECKS_URL)
 
         if "login" not in self._driver.current_url:
@@ -146,7 +145,10 @@ class HecksWebClient(object):
     def disconnect(self):
         """ Close the webdriver window and stop the polling session. """
         self._stop_poll_event.set()
-        self._execution_priority_queue.put((QUIT_PRIORITY, "return", self._driver.close))
+        self._execution_lock.acquire()
+        self._driver.quit()
+        self._execution_priority_queue = PriorityQueue()
+        self._execution_lock.release()
 
     def play_move(self, move, color):
         """
@@ -273,11 +275,13 @@ class HecksWebClient(object):
         """
         while True:
             priority, script, function = self._execution_priority_queue.get()
+            self._execution_lock.acquire()
             if priority < POLL_PRIORITY:
                 logging.debug("[EXECUTOR] Executing script: {}".format(repr(script)))
             out = self._driver.execute_script(script)
             if function is not None:
                 function(out)
+            self._execution_lock.release()
 
     def _poll_game(self, poll_delay=DEFAULT_POLL_DELAY):
         """ This thread should be running at all times as long as a game is going, as it updates the game information in the client. """
@@ -353,12 +357,13 @@ class HecksWebClient(object):
             return HTP_RESIGN
 
         if not coordinates_string or len(coordinates_string) != 2:
+            logging.warning("Invalid input to parse_server_coordinates: {}".format(repr(coordinates_string)))
             return None
 
         try:
             x, y = (HecksWebClient.one_char_conversion(c) for c in coordinates_string)
-        except ValueError:
-            logging.warning("Invalid input to parse_server_coordinates: {}".format(repr(coordinates_string)))
+        except ValueError as err:
+            logging.warning("Invalid input to parse_server_coordinates, exception raised by one_char_conversion: {}".format(err))
             return None
         htp_y = 10 - y // 2  # convert '0-19' into '10-1'
 
@@ -457,3 +462,4 @@ if __name__ == "__main__":
         assert got == expected
 
     client = HecksWebClient("asfffd", "asffffd")
+

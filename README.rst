@@ -111,11 +111,11 @@ Required features before release 1.0.0
 ======================================
 
 + Multiple games per session, with default to infinite - Decided by CLI options or settings file.
-+ Infinite game search, the site seems to stop the search after not finding a match for a while.
-+ Close the program gracefully by sending quit to the engine.
++ Infinite game search, the site seems to stop the search after not finding a match for a while. (Bug on developer's site)
++ Close the program gracefully by sending quit to the engine. (Added in version 0.4.3)
 + Support for changing of time controls - Decided by CLI options or settings file.
 + Suport for resuming mid games - Maybe sending the kifu at the start of a new game somehow. At the engine side this is just sending "play move color" for all already played moves. This is also required for engine analysis.
-+ Commands: clear_board, time_settings, time_left
++ Commands: clear_board, time_settings, time_left (clear_board added in version 0.4.3)
 
 Possible features for the future
 ================================

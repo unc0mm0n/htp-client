@@ -7,7 +7,7 @@ def readme():
 
 
 setup(name='htp-client',
-      version='0.2.3',
+      version='0.4.3',
       description='Make a Hecks engine using the HTP protocol play on the hecks.space website',
       long_description=readme(),
       url='http://github.com/unc0mm0n/htp-client.git',

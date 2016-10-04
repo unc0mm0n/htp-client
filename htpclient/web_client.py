@@ -4,6 +4,7 @@ which will send pipe them to the engine.
 """
 from selenium import webdriver
 from selenium.webdriver.support.ui import WebDriverWait
+from selenium.common.exceptions import TimeoutException
 from queue import PriorityQueue
 import threading
 import logging
@@ -220,12 +221,17 @@ class HecksWebClient(object):
             logging.info("Starting a new game.")
             self._driver.get(HECKS_URL + "/play")
 
-            if "play" not in self._driver.current_url:
+            if "play" in self._driver.current_url:
+                try:
+                    WebDriverWait(self._driver, DEFAULT_PAGE_WAIT_TIMEOUT).until(lambda x: x.find_element_by_class_name(MATCH_BUTTON_CLASS))
+                    self._driver.find_element_by_class_name(MATCH_BUTTON_CLASS).click()
+                except TimeoutException:
+                    if "game" in self._driver.current_url:
+                        logging.info("Auto connection to existing game detected.")
+                    else:
+                        raise
+            else:
                 raise ClientError("Unable to reach play page. Are you logged in?")
-
-            WebDriverWait(self._driver, DEFAULT_PAGE_WAIT_TIMEOUT).until(lambda x: x.find_element_by_class_name(MATCH_BUTTON_CLASS))
-
-            self._driver.find_element_by_class_name(MATCH_BUTTON_CLASS).click()
         else:
             logging.info("Connecting to existing game: {}".format(repr(id)))
             self._driver.get(HECKS_URL + "/game/{}".format(id))
@@ -239,7 +245,7 @@ class HecksWebClient(object):
             time.sleep(0.5)
 
         logging.info("Game started! We are playing as: {}".format(repr(self.color)))
-        return self.color
+        return (self.color, map(self.parse_server_coordinates, self.game['kifu']))
 
     def wait_for_move(self, player, timeout=None):
         """
@@ -256,7 +262,7 @@ class HecksWebClient(object):
         logging.info("Waiting for move for player: {}".format(repr(player)))
 
         w = 0
-        while player == self.current_player:
+        while player == self.current_player and self.in_game:
             time.sleep(0.2)
             w += 0.2
             if timeout and w > timeout:
@@ -373,14 +379,15 @@ class HecksWebClient(object):
             return None
 
         if htp_y <= 5:
-            max_x = 9 + 2 * y
+            max_x = 9 + 2 * htp_y
             htp_x = x - (4 - htp_y)
         else:
-            max_x = 9 + 2 * (11 - y)
+            max_x = 9 + 2 * (11 - htp_y)
             htp_x = x - (htp_y - 7)
 
         if htp_x < 1 or htp_x > max_x or htp_y < 1 or htp_y > 10:
-            logging.warning("Invalid input to parse_server_coordinates: {}. got {}".format(repr(coordinates_string), (htp_y, htp_x)))
+            logging.warning("Invalid input to parse_server_coordinates: {}. got {}, max_x is {}".format(repr(coordinates_string),
+                                                                                                        (htp_y, htp_x), max_x))
             return None
         return chr(htp_y + ord('a') - 1) + str(htp_x)
 
@@ -428,9 +435,9 @@ if __name__ == "__main__":
         print('909f got value error as required')
 
     # Test parse_server_coordinates
-
     for value, expected in (("00", None), ("40", None), ("41", "j1"), ("50", "j2"), ("51", None), ("60", None), ("61", "j3"),
-                            ("45", "h3"), ("0i", None), ("4i", "a1"), ("5j", "a2"), ("5i", None), ("6j", None), ("6i", "a3")):
+                            ("45", "h3"), ("0i", None), ("4i", "a1"), ("5j", "a2"), ("5i", None), ("6j", None), ("6i", "a3"),
+                            ("f8", "f16"), ("i9", "f19"), ("ia", "e19"), ("j9", None)):
         got = HecksWebClient.parse_server_coordinates(value)
         print(value, got, expected)
         assert got == expected

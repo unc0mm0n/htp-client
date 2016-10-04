@@ -46,12 +46,19 @@ def main(command, username, password):
 
     try:
         web_client.connect()
-        engine_color = web_client.start_game()
+        engine_color, current_state = web_client.start_game()
         if engine_color is None:
             logging.error('Received color None from web client. Unable to start game.')
             exit(-1)
 
         enemey_color = (BLUE if engine_color == RED else RED)
+
+        if current_state:
+            logging.info("Got non-empty state from web_client, sending move commands. {}".format(current_state))
+            color = BLUE
+            for move in current_state:
+                controller.command_play(color, move)
+                color = (BLUE if color == RED else RED)
 
         while web_client.in_game:
             try:

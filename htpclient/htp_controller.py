@@ -71,6 +71,10 @@ class HTPController(object):
 
         self.send_command("play {} {}\n".format(color, coordinates))
 
+    def command_quit(self):
+        """ [Command] Tell the engine to quit. """
+        self.send_command("quit\n")
+
     def send_command(self, cmd):
         """ Send any command given as cmd to _pipe_out, with no validations. Accepts either str or bytes object. """
         if isinstance(cmd, str):

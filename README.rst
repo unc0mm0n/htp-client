@@ -76,8 +76,11 @@ Currently supported commands (emmited by the controller) are:
 Usage
 =====
 
-Run
-``python main.py "Command to run your engine" "username" "password"``
+If you are running directly from source, from the main directory run:
+``python htpplay.py "Command to run your engine" "username" "password"``
+
+If you installed using pip, run:
+``htpplay "Command to run your engine" "username" "password"``
 
 | As of right now, these are set in stone. Might change later. Don’t
   forget to encase in quotes when necessary.

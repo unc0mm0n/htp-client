@@ -10,7 +10,7 @@ import subprocess
 import logging
 
 from htpclient.htp_controller import HTPController
-from htpclient.web_client import HecksWebClient
+from htpclient.web_client import HecksWebClient, ClientError
 
 # This part seems to be pythonian necessary evil...
 try:
@@ -18,7 +18,7 @@ try:
 except:
     pass
 
-logging.basicConfig(filename='logs/main.log', level=logging.DEBUG, format='%(asctime)s : %(name)s : %(levelname)s : %(message)s')
+logging.basicConfig(filename='logs/main.log', level=logging.WARNING, format='%(asctime)s : %(name)s : %(levelname)s : %(message)s')
 logging = logging.getLogger(__name__)
 # End of necessary evil
 
@@ -43,24 +43,39 @@ def main(command, username, password):
     controller = HTPController(prc.stdout, prc.stdin)
 
     web_client = HecksWebClient(username, password)
-    engine_color = web_client.start_game()
-    if engine_color is None:
-        logging.error('Received color None from web client. Unable to start game.')
-        exit(-1)
 
-    enemey_color = (BLUE if engine_color == RED else RED)
+    try:
+        web_client.connect()
+        engine_color = web_client.start_game()
+        if engine_color is None:
+            logging.error('Received color None from web client. Unable to start game.')
+            exit(-1)
 
-    while True:
-        move = web_client.wait_for_move(enemey_color, timeout=WAIT_TIMEOUT)
-        if move:
-            controller.command_play(enemey_color, move)
+        enemey_color = (BLUE if engine_color == RED else RED)
 
-        played_succesfully = False
-        while not played_succesfully:
-            controller.command_genmove(engine_color)
-            move = controller.move_queue.get()
-            logging.info("Got move {}, attempting to play it.".format(repr(move)))
-            played_succesfully = web_client.play_move(move, engine_color)
+        while web_client.in_game:
+            try:
+                move = web_client.wait_for_move(enemey_color, timeout=WAIT_TIMEOUT)
+                if move:
+                    controller.command_play(enemey_color, move)
+
+                played_succesfully = False
+                while not played_succesfully:
+                    # Ask engine for a move
+                    controller.command_genmove(engine_color)
+
+                    # Block until we get a move
+                    move = controller.move_queue.get()
+                    logging.info("Got move {}, attempting to play it.".format(repr(move)))
+
+                    # Attempt to play it
+                    played_succesfully = web_client.play_move(move, engine_color)
+            except ClientError as err:
+                logging.warning("Got Client error during game loop. Breaking. {}".format(repr(err)))
+                break
+    finally:
+        controller.command_quit()
+        web_client.disconnect()
 
 
 def cli_main():
@@ -68,6 +83,7 @@ def cli_main():
 
     args = sys.argv[1:]
     if len(args) != 3:
+        print(args)
         print("Invalid number of arguments.")
         print("Usage: python main.py \"engine command\" username password")
         exit(-1)

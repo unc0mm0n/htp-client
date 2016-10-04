@@ -28,7 +28,9 @@ if __name__ == "__main__":
                     print("? out of data\n")
                     has_data = False
                 print(out.strip())
+            elif "quit" in in_data:
+                exit(0)
             else:
-                print("=\n")
+                print("=")
 
         sys.stdout.flush()

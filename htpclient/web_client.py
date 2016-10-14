@@ -4,7 +4,7 @@ which will send pipe them to the engine.
 """
 from selenium import webdriver
 from selenium.webdriver.support.ui import WebDriverWait
-from selenium.common.exceptions import TimeoutException
+from selenium.common.exceptions import TimeoutException, WebDriverException
 from queue import PriorityQueue
 import threading
 import logging
@@ -28,10 +28,27 @@ SERVER_PASS = "pass"
 SERVER_RESIGN = "resign"
 
 # JS Commands - Most commands have empty spaces which should be filled with COMMAND.format(parameters=values)
-BOARD_INFO_JS = "return this.game"  # We poll this command to monitor the state of the game.
+
+# We poll this command to monitor the state of the game.
+BOARD_INFO_JS = "return filter(Blaze.getView(document.getElementById(\"canvas1\")).templateInstance(), {properties})"
+REQUIRED_BOARD_PROPERTIES = ["game", "kifu", "gameId", "turn", "dotsData", "result"] # List of properties to poll for
 MAKE_MOVE_JS = 'Meteor.call("games.makeTurn", {y}, {x}, "{game_id}")'  # This is the command used by the server  to play a move.
 PASS_JS = 'Meteor.call("games.pass", "{game_id}")'  # This is the command used by the server to pass.
 RESIGN_JS = 'Meteor.call("games.resign", "{game_id}")'
+
+FILTER_JS_FUNC = """ // function to filter relevant properties from target object
+filter = function(target, items) {
+    result = {}
+    for (var i = 0; i < items.length; i++) {
+        item = items[i]
+        if (target.hasOwnProperty(item)) {
+            result[item] = target[item]
+        }
+    }
+    return result
+}
+
+"""
 
 # HTP constants
 HTP_PASS = "pass"
@@ -97,9 +114,9 @@ class HecksWebClient(object):
         if not self.game:
             return None
 
-        if self.game["name1"] == self.username:
+        if self.game["game"]["name1"] == self.username:
             return BLUE
-        elif self.game["name2"] == self.username:
+        elif self.game["game"]["name2"] == self.username:
             return RED
         else:
             return None
@@ -116,7 +133,14 @@ class HecksWebClient(object):
 
     @property
     def in_game(self):
-        return self.game is None or not self.game.get("result", False)
+        return self.game is None or not self.game["game"].get("result", False)
+
+    @property
+    def last_move(self):
+        if self.game["kifu"]:
+            return self.game["kifu"][-1]
+        else:
+            return None    
 
     def connect(self):
         """
@@ -129,7 +153,7 @@ class HecksWebClient(object):
         logging.info("Connecting to Hecks at {}".format(HECKS_URL))
         chrome_options = webdriver.ChromeOptions()
         chrome_options.add_argument("--mute-audio")
-        chrome_options.add_argument("--silent")
+        chrome_options.add_argument("--no-logging")
         self._driver = webdriver.Chrome(self.chrome_path, desired_capabilities=chrome_options.to_capabilities())
         self._driver.get(HECKS_URL)
 
@@ -171,14 +195,13 @@ class HecksWebClient(object):
             return False
 
         if move == HTP_PASS:
-            js_command = PASS_JS.format(game_id=self.game["_id"])
+            js_command = PASS_JS.format(game_id=self.game["gameId"])
         elif move == HTP_RESIGN:
-            js_command = RESIGN_JS.format(game_id=self.game["_id"])
+            js_command = RESIGN_JS.format(game_id=self.game["gameId"])
         else:
-            last_move_str = self.game["lastMove"]
-            last_move = self.parse_server_coordinates(last_move_str)
+            last_move_htp = self.parse_server_coordinates(self.last_move)
 
-            if last_move == move:
+            if last_move_htp and last_move_htp == move:
                 return False
 
             y, x = self.parse_htp_coordinates(move)
@@ -187,7 +210,7 @@ class HecksWebClient(object):
                 logging.warning("Move {} wasn't played! It was deemed an invalid coordinate (not on the board or not empty)".format(repr(move)))
                 return False
 
-            js_command = MAKE_MOVE_JS.format(x=x, y=y, game_id=self.game["_id"])
+            js_command = MAKE_MOVE_JS.format(x=x, y=y, game_id=self.game["gameId"])
 
         logging.debug("Sending command for execution: {}".format(repr(js_command)))
 
@@ -245,7 +268,7 @@ class HecksWebClient(object):
             time.sleep(0.5)
 
         logging.info("Game started! We are playing as: {}".format(repr(self.color)))
-        return (self.color, map(self.parse_server_coordinates, self.game['kifu']))
+        return (self.color, list(map(self.parse_server_coordinates, self.game['kifu'])))
 
     def wait_for_move(self, player, timeout=None):
         """
@@ -268,7 +291,7 @@ class HecksWebClient(object):
             if timeout and w > timeout:
                 raise TimeoutError("wait for move timeout expired")
 
-        return self.parse_server_coordinates(self.game["lastMove"])
+        return self.parse_server_coordinates(self.last_move)
 
     def _executor(self):
         """
@@ -278,16 +301,22 @@ class HecksWebClient(object):
 
         The queue is expected to contain tuples for priority, script, callback function. The callback function will be called with the return value of
         the execution. The second element of the tuple can be None, in which case nothing will be done with the return value.
+
+        Will catch selenium WebDriverExceptions and skip the function if they happen.
         """
         while True:
             priority, script, function = self._execution_priority_queue.get()
             self._execution_lock.acquire()
-            if priority < POLL_PRIORITY:
-                logging.debug("[EXECUTOR] Executing script: {}".format(repr(script)))
-            out = self._driver.execute_script(script)
-            if function is not None:
-                function(out)
-            self._execution_lock.release()
+            try:
+                if priority < POLL_PRIORITY:
+                    logging.debug("[EXECUTOR] Executing script: {}".format(repr(script)))
+                out = self._driver.execute_script(script)
+                if function is not None:
+                    function(out)
+            except WebDriverException as e:
+                    pass
+            finally:
+                self._execution_lock.release()
 
     def _poll_game(self, poll_delay=DEFAULT_POLL_DELAY):
         """ This thread should be running at all times as long as a game is going, as it updates the game information in the client. """
@@ -295,8 +324,9 @@ class HecksWebClient(object):
             self.game = game
 
         self.poll_delay = poll_delay
+        self._execution_priority_queue.put((POLL_PRIORITY - 1, FILTER_JS_FUNC, None))
         while not self._stop_poll_event.is_set():
-            self._execution_priority_queue.put((POLL_PRIORITY, BOARD_INFO_JS, update_game))
+            self._execution_priority_queue.put((POLL_PRIORITY, BOARD_INFO_JS.format(properties = REQUIRED_BOARD_PROPERTIES), update_game))
             time.sleep(poll_delay)
 
     @staticmethod

@@ -46,7 +46,9 @@ def main(command, username, password):
 
     try:
         web_client.connect()
+        logging.info("Connection successful, starting a game.")
         engine_color, current_state = web_client.start_game()
+        controller.command_clearboard()
         if engine_color is None:
             logging.error('Received color None from web client. Unable to start game.')
             exit(-1)

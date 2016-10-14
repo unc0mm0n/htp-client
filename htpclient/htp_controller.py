@@ -53,6 +53,10 @@ class HTPController(object):
         parser_thread.daemon = True
         parser_thread.start()
 
+    def command_clearboard(self):
+        """ Tell the engine to clear the board. """
+        self.send_command("clearboard")
+
     def command_genmove(self, color):
         """
         [Command] Tell the engine to decide on a move for given color, which he will return as a coordinates response

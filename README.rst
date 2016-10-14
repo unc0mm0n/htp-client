@@ -77,6 +77,15 @@ Currently supported commands (emitted by the controller) are:
    -  Argument: Move to play.
    -  Fail reasons: Illegal move.
 
+- clearboard
+  
+  - Ask the engine to clear the board and prepare for a new game
+  - Fail reasons: None.
+
+- quit
+
+  - Tells the engine to quit.
+
 Usage
 =====
 
